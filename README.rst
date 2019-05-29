@@ -21,6 +21,8 @@ Yaff is distributed as open source software under the conditions of the GPL
 license version 3. Read the file COPYING for more details, or visit
 http://www.gnu.org/licenses/
 
+**FORKED**
+
 
 Installation
 ============
