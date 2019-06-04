@@ -168,6 +168,7 @@ class System(object):
             self._init_log()
             # compute some derived attributes
             self._init_derived()
+        print('SYSTEM CREATED')
 
     def _init_log(self):
         if log.do_medium:
