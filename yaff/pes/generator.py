@@ -50,6 +50,7 @@ from yaff.pes.scaling import Scalings
 from yaff.pes.vlist import Harmonic, PolyFour, Fues, Cross, Cosine, \
     Chebychev1, Chebychev2, Chebychev3, Chebychev4, Chebychev6, PolySix, \
     MM3Quartic, MM3Bend, BondDoubleWell, Morse
+from yaff.pes.parameters import Parameters
 
 
 __all__ = [
@@ -306,6 +307,38 @@ class Generator(object):
             ))
         return result
 
+    def parse_yaml(self, parsec_yaml):
+        '''
+        Returns par_table and constraints object based on the corresponding section dictionary
+        from a YAML file.
+
+        Arguments
+        ---------
+        parsec_yaml: dictionary from the YAML file
+        nffatype: number of atoms involved in the Valence term
+        '''
+        constraints = None
+
+        ffatypes = []
+        par_table = dict()
+        for entry in parsec_yaml['entries']:
+            ffatypes = entry['atoms']
+            pars = []
+            for par in parsec_yaml['pars']:
+                unit = parse_unit(parsec_yaml['units'][par])
+                pars.append(entry[par] * unit)
+            pars = tuple(pars)
+            par_table[tuple(ffatypes)] = [pars]
+
+        # add equivalent permutations
+        par_table_ = dict(par_table)
+        for key, pars in par_table.iteritems():
+            current_par_table = {}
+            for alt_key, alt_pars in self.iter_equiv_keys_and_pars(key, pars):
+                par_table_[alt_key] = alt_pars
+        return par_table_, constraints
+
+
     def process_pars(self, pardef, conversions, nffatype, par_info=None):
         '''Load parameter and apply conversion factors
 
@@ -414,7 +447,7 @@ class ValenceGenerator(Generator):
     ICClass = None
     VClass = None
 
-    def __call__(self, system, parsec, ff_args):
+    def __call__(self, system, parsec_yaml, parsec, ff_args):
         '''Add contributions to the force field from a ValenceGenerator
 
            **Arguments:**
@@ -422,19 +455,28 @@ class ValenceGenerator(Generator):
            system
                 The System object for which a force field is being prepared
 
-           parse
+           parsec_yaml
+                A yaml dictionary
+           parsec
                 An instance of the ParameterSection class
 
            ff_ars
                 An instance of the FFargs class
         '''
-        self.check_suffixes(parsec)
-        conversions = self.process_units(parsec['UNIT'])
-        par_table = self.process_pars(parsec['PARS'], conversions, self.nffatype)
-        if len(par_table) > 0:
-            self.apply(par_table, system, ff_args)
+        if parsec == None:
+            par_table, constraints = self.parse_yaml(parsec_yaml)
+            if len(par_table) > 0:
+                self.apply(par_table, constraints, system, ff_args)
+        else:
+            constraints = None
+            self.check_suffixes(parsec)
+            conversions = self.process_units(parsec['UNIT'])
+            par_table = self.process_pars(parsec['PARS'], conversions, self.nffatype)
+            if len(par_table) > 0:
+                self.apply(par_table, constraints, system, ff_args)
 
-    def apply(self, par_table, system, ff_args):
+
+    def apply(self, par_table, constraints, system, ff_args):
         '''Generate terms for the system based on the par_table
 
            **Arguments:**
@@ -442,6 +484,9 @@ class ValenceGenerator(Generator):
            par_table
                 A dictionary with tuples of ffatypes is keys and lists of
                 parameters as values.
+
+           constraints
+                Constraints object representing constraints
 
            system
                 The system for which the force field is generated.
@@ -457,6 +502,7 @@ class ValenceGenerator(Generator):
             par_list = par_table.get(key, [])
             for pars in par_list:
                 vterm = self.get_vterm(pars, indexes)
+                # if constraints are satisfied, add
                 part_valence.add_term(vterm)
 
     def get_vterm(self, pars, indexes):
@@ -1583,6 +1629,31 @@ class NonbondedGenerator(Generator):
             pardef.complain(None, 'does not contain enough mixing rules for the generator %s' % self.prefix)
         return result
 
+    def parse_yaml(self, parsec_yaml):
+        '''
+        Returns par_table and scale_table based on the corresponding section dictionary
+        from a YAML file.
+
+        Arguments
+        ---------
+        parsec_yaml: dictionary from the YAML file
+        '''
+        par_table = dict()
+        for entry in parsec_yaml['entries']:
+            ffatypes = entry['atoms']
+            pars = []
+            #print(entry.keys())
+            for par in parsec_yaml['pars']:
+                unit = parse_unit(parsec_yaml['units'][par])
+                pars.append(entry[par] * unit)
+            pars = tuple(pars)
+            par_table[tuple(ffatypes)] = [pars]
+        scale_table = dict()
+        for i, scale in enumerate(parsec_yaml['scale']):
+            scale_table[i + 1] = scale
+        if len(parsec_yaml['scale']) == 3:
+            scale_table[4] = 1.0
+        return par_table, scale_table
 
 class LJGenerator(NonbondedGenerator):
     prefix = 'LJ'
@@ -1666,13 +1737,24 @@ class MM3Generator(NonbondedGenerator):
     prefix = 'MM3'
     suffixes = ['UNIT', 'SCALE', 'PARS']
     par_info = [('SIGMA', float), ('EPSILON', float), ('ONLYPAULI', int)]
+    print('Created MM3 generator')
 
-    def __call__(self, system, parsec, ff_args):
-        self.check_suffixes(parsec)
-        conversions = self.process_units(parsec['UNIT'])
-        par_table = self.process_pars(parsec['PARS'], conversions, 1)
-        scale_table = self.process_scales(parsec['SCALE'])
-        self.apply(par_table, scale_table, system, ff_args)
+    def __call__(self, system, parsec_yaml, parsec, ff_args):
+        '''
+        maintains support for Parameters object
+        '''
+        if parsec_yaml is None:
+            self.check_suffixes(parsec)
+            conversions = self.process_units(parsec['UNIT'])
+            par_table = self.process_pars(parsec['PARS'], conversions, 1)
+            scale_table = self.process_scales(parsec['SCALE'])
+            #print(par_table, scale_table)
+            self.apply(par_table, scale_table, system, ff_args)
+        else:
+            par_table, scale_table = self.parse_yaml(parsec_yaml)
+            #print(par_table, scale_table)
+            self.apply(par_table, scale_table, system, ff_args)
+
 
     def apply(self, par_table, scale_table, system, ff_args):
         # Prepare the atomic parameters
@@ -1979,14 +2061,65 @@ class FixedChargeGenerator(NonbondedGenerator):
     suffixes = ['UNIT', 'SCALE', 'ATOM', 'BOND', 'DIELECTRIC']
     par_info = [('Q0', float), ('P', float), ('R', float)]
 
-    def __call__(self, system, parsec, ff_args):
-        self.check_suffixes(parsec)
-        conversions = self.process_units(parsec['UNIT'])
-        atom_table = self.process_atoms(parsec['ATOM'], conversions)
-        bond_table = self.process_bonds(parsec['BOND'], conversions)
-        scale_table = self.process_scales(parsec['SCALE'])
-        dielectric = self.process_dielectric(parsec['DIELECTRIC'])
-        self.apply(atom_table, bond_table, scale_table, dielectric, system, ff_args)
+    def __call__(self, system, parsec_yaml, parsec, ff_args):
+        if parsec_yaml is None:
+            self.check_suffixes(parsec)
+            conversions = self.process_units(parsec['UNIT'])
+            atom_table = self.process_atoms(parsec['ATOM'], conversions)
+            bond_table = self.process_bonds(parsec['BOND'], conversions)
+            scale_table = self.process_scales(parsec['SCALE'])
+            dielectric = self.process_dielectric(parsec['DIELECTRIC'])
+            print('atom table', atom_table)
+            print('bond', bond_table)
+            print('scale', scale_table)
+            print('dielectric', dielectric)
+            self.apply(atom_table, bond_table, scale_table, dielectric, system, ff_args)
+        else:
+            atom_table, bond_table, scale_table, dielectric = self.parse_yaml(parsec_yaml)
+            print('atom table', atom_table)
+            print('bond', bond_table)
+            print('scale', scale_table)
+            print('dielectric', dielectric)
+            self.apply(atom_table, bond_table, scale_table, dielectric, system, ff_args)
+
+    def parse_yaml(self, parsec_yaml):
+        '''
+        Returns par_table and scale_table based on the corresponding section dictionary
+        from a YAML file.
+
+        Arguments
+        ---------
+        parsec_yaml: dictionary from the YAML file
+        '''
+        atom_table = dict()
+        bond_table = dict()
+        scale_table = dict()
+        dielectric = dict()
+
+        yaml_atom = parsec_yaml['atom']
+        yaml_bond = parsec_yaml['bond']
+        for entry in yaml_atom['entries']:
+            ffatype = entry['atom']
+            pars = []
+            for par in yaml_atom['pars']:
+                unit = parse_unit(yaml_atom['units'][par])
+                pars.append(entry[par] * unit)
+            pars = tuple(pars)
+            atom_table[ffatype] = pars
+        for i, scale in enumerate(parsec_yaml['scale']):
+            scale_table[i + 1] = scale
+        if len(parsec_yaml['scale']) == 3:
+            scale_table[4] = 1.0
+
+        for entry in yaml_bond['entries']:
+            ffatypes = entry['atoms']
+            pars = []
+            for par in yaml_bond['pars']:
+                unit = parse_unit(yaml_bond['units'][par])
+                pars.append(entry[par] * unit)
+            bond_table[tuple(ffatypes)] = pars[0]
+        dielectric = parsec_yaml['dielectric']
+        return atom_table, bond_table, scale_table, dielectric
 
     def process_atoms(self, pardef, conversions):
         result = {}
@@ -2073,7 +2206,7 @@ class FixedChargeGenerator(NonbondedGenerator):
         ff_args.add_electrostatic_parts(system, scalings, dielectric)
 
 
-def apply_generators(system, parameters, ff_args):
+def apply_generators(system, yaml_dict, ff_args):
     '''Populate the attributes of ff_args, prepares arguments for ForceField
 
        **Arguments:**
@@ -2084,9 +2217,8 @@ def apply_generators(system, parameters, ff_args):
        ff_args
             An instance of the FFArgs class.
 
-       parameters
-            An instance of the Parameters, typically made by
-            ``Parmaeters.from_file('parameters.txt')``.
+       yaml_dict
+            Dictionary loaded from a .yaml file
     '''
 
     # Collect all the generators that have a prefix.
@@ -2095,15 +2227,22 @@ def apply_generators(system, parameters, ff_args):
         if isinstance(x, type) and issubclass(x, Generator) and x.prefix is not None:
             generators[x.prefix] = x()
 
-    # Go through all the sections of the parameter file and apply the
-    # corresponding generator.
-    for prefix, section in parameters.sections.items():
-        generator = generators.get(prefix)
-        if generator is None:
-            if log.do_warning:
-                log.warn('There is no generator named %s. It will be ignored.' % prefix)
-        else:
-            generator(system, section, ff_args)
+    # maintain compatibility with old format
+    if isinstance(yaml_dict, Parameters):
+        parameters = yaml_dict
+        # Go through all the sections of the parameter file and apply the
+        # corresponding generator.
+        for prefix, section in parameters.sections.items():
+            generator = generators.get(prefix)
+            if generator is None:
+                if log.do_warning:
+                    log.warn('There is no generator named %s. It will be ignored.' % prefix)
+            else:
+                generator(system, None, section, ff_args)
+    else:
+        for prefix in yaml_dict.keys():
+            generator = generators.get(prefix)
+            generator(system, yaml_dict[prefix], None, ff_args)
 
     # If tail corrections are requested, go through all parts and add when necessary
     if ff_args.tailcorrections:
