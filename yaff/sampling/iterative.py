@@ -41,7 +41,7 @@ __all__ = [
     'Iterative', 'StateItem', 'AttributeStateItem', 'PosStateItem',
     'DipoleStateItem', 'DipoleVelStateItem', 'VolumeStateItem', 'CellStateItem',
     'EPotContribStateItem', 'EpotBondsStateItem', 'EpotBendsStateItem',
-    'EpotDihedsStateItem', 'Hook',
+    'EpotDihedsStateItem', 'Hook', 'COMICStateItem',
 ]
 
 
@@ -161,6 +161,21 @@ class StateItem(object):
 
     def copy(self):
         return self.__class__()
+
+class COMICStateItem(StateItem):
+    '''
+    Keeps track of InternalCoordinates of part_valence_com
+    '''
+    def __init__(self, indices):
+        StateItem.__init__(self, 'ics')
+        self.indices = indices
+
+    def get_value(self, iterative):
+        #nic = iterative.ff.part_valence_com.iclist.nic
+        return np.array([iterative.ff.part_valence_com.iclist.ictab[index]['value'] for index in self.indices])
+        #return np.array(iterative.ff.part_valence.iclist.ictab[0]['value'])
+
+
 
 
 class AttributeStateItem(StateItem):

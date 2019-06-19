@@ -41,6 +41,8 @@
 from __future__ import division
 
 import numpy as np
+import yaml
+import molmod
 
 from yaff.log import log, timer
 from yaff.pes.ext import compute_ewald_reci, compute_ewald_reci_dd, compute_ewald_corr, \
@@ -55,7 +57,7 @@ __all__ = [
     'ForcePartEwaldReciprocalDD', 'ForcePartEwaldCorrectionDD',
     'ForcePartEwaldCorrection', 'ForcePartEwaldNeutralizing',
     'ForcePartValence', 'ForcePartPressure', 'ForcePartGrid',
-    'ForcePartTailCorrection',
+    'ForcePartTailCorrection', 'ForcePartValenceCOM',
 ]
 
 
@@ -221,10 +223,11 @@ class ForceField(ForcePart):
                 An instance of the System class
 
            parameters
-                Three types are accepted: (i) the filename of the parameter
+                Four types are accepted: (i) the filename of the parameter
                 file, which is a text file that adheres to YAFF parameter
-                format, (ii) a list of such filenames, or (iii) an instance of
-                the Parameters class.
+                format, (ii) a list of such filenames, (iii) an instance of
+                the Parameters class, or (iv) the filename of the parameter file
+                in the YAML format.
 
            See the constructor of the :class:`yaff.pes.generator.FFArgs` class
            for the available optional arguments.
@@ -241,11 +244,50 @@ class ForceField(ForcePart):
             from yaff.pes.parameters import Parameters
             if log.do_medium:
                 log('Generating force field from %s' % str(parameters))
-            if not isinstance(parameters, Parameters):
-                parameters = Parameters.from_file(parameters)
-            ff_args = FFArgs(**kwargs)
-            apply_generators(system, parameters, ff_args)
+            if isinstance(parameters, str):
+                if parameters[-3:] == 'txt':
+                    parameters = Parameters.from_file(parameters)
+                    ff_args = FFArgs(**kwargs)
+                    apply_generators(system, parameters, ff_args)
+                else:
+                    yaml_dict = yaml.safe_load(open(parameters))
+                    ff_args = FFArgs(**kwargs)
+                    apply_generators(system, yaml_dict, ff_args)
+            else:
+                if isinstance(parameters, Parameters):
+                    raise NotImplementedError
+                else:
+                    yaml_dict = parameters
+                    ff_args = FFArgs(**kwargs)
+                    apply_generators(system, yaml_dict, ff_args)
             return ForceField(system, ff_args.parts, ff_args.nlist)
+
+    def add_part_valence_com(self, comsystem, parameters, scaling=None):
+        '''
+        Creates an instance of ForcePartValence and adds it to self.parts
+
+        Arguments
+        ---------
+        comlist: comlist based on which the CG force field is defined
+        parameters: path to YAML parameter file that defines the CG force field
+        '''
+        from yaff.pes.generator import apply_generators, FFArgs
+        ff_args = FFArgs()
+
+        if isinstance(parameters, str):
+            yaml_dict = yaml.safe_load(open(parameters))
+        else:
+            yaml_dict = parameters
+        if scaling is not None:
+            threshold = scaling[0] * molmod.units.kjmol
+            inverse_temperature = scaling[1] / molmod.units.kjmol
+            scaling = (threshold, inverse_temperature)
+        part_valence_com = ForcePartValenceCOM(comsystem, scaling)
+        ff_args.parts.append(part_valence_com)
+        apply_generators(comsystem, yaml_dict, ff_args)
+        part_valence_com = ff_args.get_part(ForcePartValenceCOM)
+        part_valence_com.name = 'valence_com'
+        self.add_part(part_valence_com)
 
     def update_rvecs(self, rvecs):
         '''See :meth:`yaff.pes.ff.ForcePart.update_rvecs`'''
@@ -658,7 +700,7 @@ class ForcePartValence(ForcePart):
        comes from the field of neural networks. More details can be found in the
        chapter, :ref:`dg_sec_backprop`.
     '''
-    def __init__(self, system, comlist=None):
+    def __init__(self, system):
         '''
            Parameters
            ----------
@@ -670,9 +712,14 @@ class ForcePartValence(ForcePart):
                 These centers of mass are used as input for the first layer, the relative
                 vectors.
         '''
+        comlist=None
         ForcePart.__init__(self, 'valence', system)
-        self.comlist = comlist
-        self.dlist = DeltaList(system if comlist is None else comlist)
+
+        # override self.gpos to the correct size!
+        # natom of COMSystem object will return number of beads
+        # but gpos has to have the size (n_atoms, 3), to be consisten
+        # with the other parts of the force field
+        self.dlist = DeltaList(system)
         self.iclist = InternalCoordinateList(self.dlist)
         self.vlist = ValenceList(self.iclist)
         if log.do_medium:
@@ -699,22 +746,84 @@ class ForcePartValence(ForcePart):
 
     def _internal_compute(self, gpos, vtens):
         with timer.section('Valence'):
-            if self.comlist is not None:
-                self.comlist.forward()
             self.dlist.forward()
             self.iclist.forward()
             energy = self.vlist.forward()
             if not ((gpos is None) and (vtens is None)):
                 self.vlist.back()
                 self.iclist.back()
-                if self.comlist is None:
-                    self.dlist.back(gpos, vtens)
-                else:
-                    self.comlist.gpos[:] = 0.0
-                    self.dlist.back(self.comlist.gpos, vtens)
-                    self.comlist.back(gpos, vtens)
+                self.dlist.back(gpos, vtens)
             return energy
 
+class ForcePartValenceCOM(ForcePartValence):
+    '''
+    Part of a force-field model with interactions that act on centers of mass
+    At this moment, only covalent interactions are supported.
+    '''
+    def __init__(self, comsystem, scaling=None):
+        ForcePart.__init__(self, 'valence_com', comsystem)
+        #ForcePartValence.__init__(self, system)
+        self.comlist = comsystem.comlist
+        self.gpos = np.zeros((comsystem.gpos_dim, 3), float)
+        self.dlist = DeltaList(self.comlist)
+        self.iclist = InternalCoordinateList(self.dlist)
+        self.vlist = ValenceList(self.iclist)
+        self.scaling = scaling
+        if log.do_medium:
+            with log.section('FPINIT'):
+                log('Force part: %s' % self.name)
+                log.hline()
+
+    def _internal_compute(self, gpos, vtens):
+        with timer.section('Valence'):
+            self.comlist.forward()
+            self.dlist.forward()
+            self.iclist.forward()
+            energy = self.vlist.forward()
+            if not ((gpos is None) and (vtens is None)):
+                self.vlist.back()
+                self.iclist.back()
+                self.comlist.gpos[:] = 0.0
+                self.dlist.back(self.comlist.gpos, vtens)
+                #print('first: ', self.comlist.gpos)
+                energy = self._scale(self.comlist.gpos, energy)
+                #print('second: ', self.comlist.gpos)
+                self.comlist.back(gpos, vtens)
+            else:
+                energy = self._scale(None, energy)
+            return energy
+
+    def _scale(self, gpos, energy):
+        '''
+        Scales the gpos and energy
+        '''
+        if self.scaling is not None:
+            threshold = self.scaling[0]
+            hardness = self.scaling[1]
+            if False:
+                a = np.exp(hardness * energy)
+                b = np.exp(hardness * threshold)
+                N = (a + b) / 2
+                energy = np.log(N) / hardness
+                if gpos is not None:
+                    scale = a / (2 * N)
+                    #print('SCALE: ', scale)
+                    #print('ENERGY: ', energy)
+                    gpos *= scale
+            else:
+                delta = energy - threshold
+                if hardness * delta < 100:
+                    a = np.exp(hardness * delta)
+                    #b = np.exp(hardness * threshold)
+                    b = 1
+                    N = (a + b) / 2
+                    energy = np.log(N) / hardness + threshold
+                    if gpos is not None:
+                        scale = a / (2 * N)
+                        #print('SCALE: ', scale)
+                        #print('ENERGY: ', energy)
+                        gpos *= scale
+        return energy
 
 class ForcePartPressure(ForcePart):
     '''Applies a constant istropic pressure.'''

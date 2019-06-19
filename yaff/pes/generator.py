@@ -51,6 +51,8 @@ from yaff.pes.vlist import Harmonic, PolyFour, Fues, Cross, Cosine, \
     Chebychev1, Chebychev2, Chebychev3, Chebychev4, Chebychev6, PolySix, \
     MM3Quartic, MM3Bend, BondDoubleWell, Morse
 from yaff.pes.parameters import Parameters
+from yaff.pes.comlist import COMList
+from yaff.system import System
 
 
 __all__ = [
@@ -318,7 +320,6 @@ class Generator(object):
         nffatype: number of atoms involved in the Valence term
         '''
         constraints = None
-
         ffatypes = []
         par_table = dict()
         for entry in parsec_yaml['entries']:
@@ -502,8 +503,8 @@ class ValenceGenerator(Generator):
             par_list = par_table.get(key, [])
             for pars in par_list:
                 vterm = self.get_vterm(pars, indexes)
-                # if constraints are satisfied, add
-                part_valence.add_term(vterm)
+                if True: #if constraints are satisfied
+                    part_valence.add_term(vterm)
 
     def get_vterm(self, pars, indexes):
         '''Return an instance of the ValenceTerm class with the proper InternalCoordinate instance
@@ -1737,7 +1738,6 @@ class MM3Generator(NonbondedGenerator):
     prefix = 'MM3'
     suffixes = ['UNIT', 'SCALE', 'PARS']
     par_info = [('SIGMA', float), ('EPSILON', float), ('ONLYPAULI', int)]
-    print('Created MM3 generator')
 
     def __call__(self, system, parsec_yaml, parsec, ff_args):
         '''
@@ -2069,17 +2069,9 @@ class FixedChargeGenerator(NonbondedGenerator):
             bond_table = self.process_bonds(parsec['BOND'], conversions)
             scale_table = self.process_scales(parsec['SCALE'])
             dielectric = self.process_dielectric(parsec['DIELECTRIC'])
-            print('atom table', atom_table)
-            print('bond', bond_table)
-            print('scale', scale_table)
-            print('dielectric', dielectric)
             self.apply(atom_table, bond_table, scale_table, dielectric, system, ff_args)
         else:
             atom_table, bond_table, scale_table, dielectric = self.parse_yaml(parsec_yaml)
-            print('atom table', atom_table)
-            print('bond', bond_table)
-            print('scale', scale_table)
-            print('dielectric', dielectric)
             self.apply(atom_table, bond_table, scale_table, dielectric, system, ff_args)
 
     def parse_yaml(self, parsec_yaml):
@@ -2212,7 +2204,7 @@ def apply_generators(system, yaml_dict, ff_args):
        **Arguments:**
 
        system
-            A System instance for which the force field object is being made
+            An AbstractSystem instance for which the force field object is being made
 
        ff_args
             An instance of the FFArgs class.

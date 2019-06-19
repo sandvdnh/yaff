@@ -31,9 +31,10 @@ import numpy as np, h5py as h5
 from yaff.log import log
 from yaff.atselect import check_name, atsel_compile, iter_matches
 from yaff.pes.ext import Cell
+from yaff.pes.comlist import COMList
 
 
-__all__ = ['System']
+__all__ = ['AbstractSystem', 'System', 'COMSystem']
 
 
 def _unravel_triangular(i):
@@ -46,144 +47,30 @@ def _unravel_triangular(i):
     i1 = i - (i0*(i0-1))//2
     return i0, i1
 
+class AbstractSystem(object):
+    '''
+    Base class for a system of particles. The 'System' and 'COMList' classes derive from this class.
+    Its main arguments are pos and gpos arguments, and functions required to apply valence generators and add valence terms
 
-class System(object):
-    def __init__(self, numbers, pos, scopes=None, scope_ids=None, ffatypes=None,
-                 ffatype_ids=None, bonds=None, rvecs=None, charges=None,
-                 radii=None, valence_charges=None, dipoles=None, radii2=None,
-                 masses=None):
-        r'''Initialize a System object.
-
-           **Arguments:**
-
-           numbers
-                A numpy array with atomic numbers
-
-           pos
-                A numpy array (N,3) with atomic coordinates in Bohr.
-
-           **Optional arguments:**
-
-           scopes
-                A list with scope names
-
-           scope_ids
-                A list of scope indexes that links each atom with an element of
-                the scopes list. If this argument is not present, while scopes
-                is given, it is assumed that scopes contains a scope name for
-                every atom, i.e. that it is a list with length natom. In that
-                case, it will be converted automatically to a scopes list
-                with only unique name together with a corresponding scope_ids
-                array.
-
-           ffatypes
-                A list of labels of the force field atom types.
-
-           ffatype_ids
-                A list of atom type indexes that links each atom with an element
-                of the list ffatypes. If this argument is not present, while
-                ffatypes is given, it is assumed that ffatypes contains an
-                atom type for every element, i.e. that it is a list with length
-                natom. In that case, it will be converted automatically to
-                a short ffatypes list with only unique elements (within each
-                scope) together with a corresponding ffatype_ids array.
-
-           bonds
-                a numpy array (B,2) with atom indexes (counting starts from
-                zero) to define the chemical bonds.
-
-           rvecs
-                An array whose rows are the unit cell vectors. At most three
-                rows are allowed, each containing three Cartesian coordinates.
-
-           charges
-                An array of atomic charges
-
-           radii
-                An array of atomic radii, :math:`R_{A,c}`, that determine shape of the atomic
-                charge distribution:
-
-                .. math::
-
-                    \rho_{A,c}(\mathbf{r}) = \frac{q_A}{\pi^{3/2}R_{A,c}^3} \exp\left(
-                    -\frac{|r - \mathbf{R}_A|^2}{R_{A,c}^2}
-                    \right)
-
-           valence_charges
-                In case a point-core + distribute valence charge is used, this
-                vector contains the valence charges. The core charges can be
-                computed by subtracting the valence charges from the net
-                charges.
-
-           dipoles
-                An array of atomic dipoles
-
-           radii2
-                An array of atomic radii, :math:`R_{A,d}`, that determine shape of the
-                atomic dipole distribution:
-
-                .. math::
-
-                   \rho_{A,d}(\mathbf{r}) = -2\frac{\mathbf{d}_A \cdot (\mathbf{r} - \mathbf{R}_A)}{
-                   \sqrt{\pi} R_{A,d}^5
-                   }\exp\left(
-                    -\frac{|r - \mathbf{R}_A|^2}{R_{A,d}^2}
-                    \right)
-
-           masses
-                The atomic masses (in atomic units, i.e. m_e)
-
-
-           Several attributes are derived from the (optional) arguments:
-
-           * ``cell`` contains the rvecs attribute and is an instance of the
-             ``Cell`` class.
-
-           * ``neighs1``, ``neighs2`` and ``neighs3`` are dictionaries derived
-             from ``bonds`` that contain atoms that are separated 1, 2 and 3
-             bonds from a given atom, respectively. This means that i in
-             system.neighs3[j] is ``True`` if there are three bonds between
-             atoms i and j.
-        '''
+    For convenience, particles are still referred to as atoms even though they might represent virtual sites
+    in the case of a COMList(AbstractSystem) instance.
+    '''
+    def __init__(self, numbers, scopes=None, scope_ids=None, ffatypes=None, ffatype_ids=None, rvecs=None, bonds=None):
         if len(numbers.shape) != 1:
             raise ValueError('Argument numbers must be a one-dimensional array.')
-        if pos.shape != (len(numbers), 3):
-            raise ValueError('The pos array must have Nx3 rows. Mismatch with numbers argument with shape (N,).')
+
         self.numbers = numbers
-        self.pos = pos
+        self.pos = np.zeros((len(numbers), 3), float)
+        self.gpos = np.zeros((len(numbers), 3), float)
+        self.bonds = bonds
+        self.cell = Cell(rvecs)
         self.ffatypes = ffatypes
         self.ffatype_ids = ffatype_ids
         self.scopes = scopes
         self.scope_ids = scope_ids
-        self.bonds = bonds
-        self.cell = Cell(rvecs)
-        self.charges = charges
-        self.radii = radii
-        self.valence_charges = valence_charges
-        self.dipoles = dipoles
-        self.radii2 = radii2
-        self.masses = masses
         with log.section('SYS'):
-            # report some stuff
-            self._init_log()
             # compute some derived attributes
             self._init_derived()
-        print('SYSTEM CREATED')
-
-    def _init_log(self):
-        if log.do_medium:
-            log('Unit cell')
-            log.hline()
-            log('Number of periodic dimensions: %i' % self.cell.nvec)
-            lengths, angles = self.cell.parameters
-            names = 'abc'
-            for i in range(len(lengths)):
-                log('Cell parameter %5s: %10s' % (names[i], log.length(lengths[i])))
-            names = 'alpha', 'beta', 'gamma'
-            for i in range(len(angles)):
-                log('Cell parameter %5s: %10s' % (names[i], log.angle(angles[i])))
-            log.hline()
-            log.blank()
 
     def _init_derived(self):
         if self.bonds is not None:
@@ -268,7 +155,6 @@ class System(object):
             log.hline()
             log.blank()
 
-
     def _init_derived_scopes(self):
         if self.scope_ids is None:
             if len(self.scopes) != self.natom:
@@ -288,6 +174,7 @@ class System(object):
         for scope in self.scopes:
             check_name(scope)
         # check the range of the ids
+        print(self.scope_ids.min())
         if self.scope_ids.min() != 0 or self.scope_ids.max() != len(self.scopes)-1:
             raise ValueError('The ffatype_ids have incorrect bounds.')
         if log.do_medium:
@@ -400,6 +287,210 @@ class System(object):
             return len(self.bonds)
 
     nbond = property(_get_nbond)
+
+    def get_scope(self, index):
+        """Return the of the scope (string) of atom with given index"""
+        return self.scopes[self.scope_ids[index]]
+
+    def get_ffatype(self, index):
+        """Return the of the ffatype (string) of atom with given index"""
+        return self.ffatypes[self.ffatype_ids[index]]
+
+    def get_indexes(self, rule):
+        """Return the atom indexes that match the filter ``rule``
+
+           ``rule`` can be a function that accepts two arguments: system and an
+           atom index and that returns True of the atom with index i is of a
+           given type. On the other hand ``rule`` can be an ATSELECT string that
+           defines the atoms of interest.
+
+           A list of atom indexes is returned.
+        """
+        if isinstance(rule, str):
+            rule = atsel_compile(rule)
+        return np.array([i for i in range(self.natom) if rule(self, i)])
+
+    def iter_bonds(self):
+        """Iterate over all bonds."""
+        if self.bonds is not None:
+            for i1, i2 in self.bonds:
+                yield i1, i2
+
+    def iter_angles(self):
+        """Iterative over all possible valence angles.
+
+           This routine is based on the attribute ``bonds``.
+        """
+        if self.bonds is not None:
+            for i1 in range(self.natom):
+                for i0 in self.neighs1[i1]:
+                    for i2 in self.neighs1[i1]:
+                        if i0 > i2:
+                            yield i0, i1, i2
+
+    def iter_dihedrals(self):
+        """Iterative over all possible dihedral angles.
+
+           This routine is based on the attribute ``bonds``.
+        """
+        if self.bonds is not None:
+            for i1, i2 in self.bonds:
+                for i0 in self.neighs1[i1]:
+                    if i0==i2: continue
+                    for i3 in self.neighs1[i2]:
+                        if i1==i3: continue
+                        if i0==i3: continue
+                        yield i0, i1, i2, i3
+
+    def iter_oops(self):
+        """Iterative over all possible oop patterns."
+
+           This routine is based on the attribute ``bonds``.
+        """
+        if self.bonds is not None:
+            for i3 in range(self.natom):
+                if len(self.neighs1[i3])==3:
+                    i0, i1, i2 = self.neighs1[i3]
+                    yield i0, i1, i2, i3
+
+    def to_file(self, fn):
+        '''
+        Write abstract system to .xyz
+        '''
+        if fn.endswith('.xyz'):
+            from molmod.io import XYZWriter
+            from molmod.periodic import periodic
+            xyz_writer = XYZWriter(fn, [periodic[n].symbol for n in self.numbers])
+            xyz_writer.dump(str(self), self.pos)
+        else:
+            print('Can only write AbstractSystem positions to .xyz. Specify a filename with .xyz extension.')
+
+class System(AbstractSystem):
+    def __init__(self, numbers, pos, scopes=None, scope_ids=None, ffatypes=None,
+                 ffatype_ids=None, bonds=None, rvecs=None, charges=None,
+                 radii=None, valence_charges=None, dipoles=None, radii2=None,
+                 masses=None):
+        r'''Initialize a System object.
+
+           **Arguments:**
+
+           numbers
+                A numpy array with atomic numbers
+
+           pos
+                A numpy array (N,3) with atomic coordinates in Bohr.
+
+           **Optional arguments:**
+
+           scopes
+                A list with scope names
+
+           scope_ids
+                A list of scope indexes that links each atom with an element of
+                the scopes list. If this argument is not present, while scopes
+                is given, it is assumed that scopes contains a scope name for
+                every atom, i.e. that it is a list with length natom. In that
+                case, it will be converted automatically to a scopes list
+                with only unique name together with a corresponding scope_ids
+                array.
+
+           ffatypes
+                A list of labels of the force field atom types.
+
+           ffatype_ids
+                A list of atom type indexes that links each atom with an element
+                of the list ffatypes. If this argument is not present, while
+                ffatypes is given, it is assumed that ffatypes contains an
+                atom type for every element, i.e. that it is a list with length
+                natom. In that case, it will be converted automatically to
+                a short ffatypes list with only unique elements (within each
+                scope) together with a corresponding ffatype_ids array.
+
+           bonds
+                a numpy array (B,2) with atom indexes (counting starts from
+                zero) to define the chemical bonds.
+
+           rvecs
+                An array whose rows are the unit cell vectors. At most three
+                rows are allowed, each containing three Cartesian coordinates.
+
+           charges
+                An array of atomic charges
+
+           radii
+                An array of atomic radii, :math:`R_{A,c}`, that determine shape of the atomic
+                charge distribution:
+
+                .. math::
+
+                    \rho_{A,c}(\mathbf{r}) = \frac{q_A}{\pi^{3/2}R_{A,c}^3} \exp\left(
+                    -\frac{|r - \mathbf{R}_A|^2}{R_{A,c}^2}
+                    \right)
+
+           valence_charges
+                In case a point-core + distribute valence charge is used, this
+                vector contains the valence charges. The core charges can be
+                computed by subtracting the valence charges from the net
+                charges.
+
+           dipoles
+                An array of atomic dipoles
+
+           radii2
+                An array of atomic radii, :math:`R_{A,d}`, that determine shape of the
+                atomic dipole distribution:
+
+                .. math::
+
+                   \rho_{A,d}(\mathbf{r}) = -2\frac{\mathbf{d}_A \cdot (\mathbf{r} - \mathbf{R}_A)}{
+                   \sqrt{\pi} R_{A,d}^5
+                   }\exp\left(
+                    -\frac{|r - \mathbf{R}_A|^2}{R_{A,d}^2}
+                    \right)
+
+           masses
+                The atomic masses (in atomic units, i.e. m_e)
+
+
+           Several attributes are derived from the (optional) arguments:
+
+           * ``cell`` contains the rvecs attribute and is an instance of the
+             ``Cell`` class.
+
+           * ``neighs1``, ``neighs2`` and ``neighs3`` are dictionaries derived
+             from ``bonds`` that contain atoms that are separated 1, 2 and 3
+             bonds from a given atom, respectively. This means that i in
+             system.neighs3[j] is ``True`` if there are three bonds between
+             atoms i and j.
+        '''
+        AbstractSystem.__init__(self, numbers, scopes, scope_ids, ffatypes, ffatype_ids, rvecs, bonds)
+        if pos.shape != (len(numbers), 3):
+            raise ValueError('The pos array must have Nx3 rows. Mismatch with numbers argument with shape (N,).')
+        self.pos = pos
+        self.charges = charges
+        self.radii = radii
+        self.valence_charges = valence_charges
+        self.dipoles = dipoles
+        self.radii2 = radii2
+        self.masses = masses
+        with log.section('SYS'):
+            # report some stuff
+            self._init_log()
+
+    def _init_log(self):
+        if log.do_medium:
+            log('Unit cell')
+            log.hline()
+            log('Number of periodic dimensions: %i' % self.cell.nvec)
+            lengths, angles = self.cell.parameters
+            names = 'abc'
+            for i in range(len(lengths)):
+                log('Cell parameter %5s: %10s' % (names[i], log.length(lengths[i])))
+            names = 'alpha', 'beta', 'gamma'
+            for i in range(len(angles)):
+                log('Cell parameter %5s: %10s' % (names[i], log.angle(angles[i])))
+            log.hline()
+            log.blank()
 
     @classmethod
     def from_file(cls, *fns, **user_kwargs):
@@ -583,71 +674,6 @@ class System(object):
             sgrp.create_dataset('radii2', data=self.radii2)
         if self.masses is not None:
             sgrp.create_dataset('masses', data=self.masses)
-
-    def get_scope(self, index):
-        """Return the of the scope (string) of atom with given index"""
-        return self.scopes[self.scope_ids[index]]
-
-    def get_ffatype(self, index):
-        """Return the of the ffatype (string) of atom with given index"""
-        return self.ffatypes[self.ffatype_ids[index]]
-
-    def get_indexes(self, rule):
-        """Return the atom indexes that match the filter ``rule``
-
-           ``rule`` can be a function that accepts two arguments: system and an
-           atom index and that returns True of the atom with index i is of a
-           given type. On the other hand ``rule`` can be an ATSELECT string that
-           defines the atoms of interest.
-
-           A list of atom indexes is returned.
-        """
-        if isinstance(rule, str):
-            rule = atsel_compile(rule)
-        return np.array([i for i in range(self.natom) if rule(self, i)])
-
-    def iter_bonds(self):
-        """Iterate over all bonds."""
-        if self.bonds is not None:
-            for i1, i2 in self.bonds:
-                yield i1, i2
-
-    def iter_angles(self):
-        """Iterative over all possible valence angles.
-
-           This routine is based on the attribute ``bonds``.
-        """
-        if self.bonds is not None:
-            for i1 in range(self.natom):
-                for i0 in self.neighs1[i1]:
-                    for i2 in self.neighs1[i1]:
-                        if i0 > i2:
-                            yield i0, i1, i2
-
-    def iter_dihedrals(self):
-        """Iterative over all possible dihedral angles.
-
-           This routine is based on the attribute ``bonds``.
-        """
-        if self.bonds is not None:
-            for i1, i2 in self.bonds:
-                for i0 in self.neighs1[i1]:
-                    if i0==i2: continue
-                    for i3 in self.neighs1[i2]:
-                        if i1==i3: continue
-                        if i0==i3: continue
-                        yield i0, i1, i2, i3
-
-    def iter_oops(self):
-        """Iterative over all possible oop patterns."
-
-           This routine is based on the attribute ``bonds``.
-        """
-        if self.bonds is not None:
-            for i3 in range(self.natom):
-                if len(self.neighs1[i3])==3:
-                    i0, i1, i2 = self.neighs1[i3]
-                    yield i0, i1, i2, i3
 
     def detect_bonds(self, exceptions=None):
         """Initialize the ``bonds`` attribute based on inter-atomic distances
@@ -1173,3 +1199,66 @@ class System(object):
             log('Generating renumberings.')
             for match in iter_matches(dm0, dm1, allowed, 1e-3, error_sq_fn, overlapping):
                 yield match
+
+class COMSystem(AbstractSystem):
+    '''
+    Class which represents a set of center of mass coordinates (in reference to an all atom System object),
+    on which a ForcePartValence can be defined
+    The self.pos attribute is updated through the comlist object that is initialized
+
+    Parameters
+    ----------
+    system : yaff.system.System
+        An object describing the atomistic system.
+    groups : list of (indices, weights) arrays.
+        Each item is a tuple with first an array of atom indices for who the center
+        of mass is to be computed and second an array with weights, used for the
+        center of mass of these atoms. Weights do not have to add up to one but they
+        should be positive (not checked).
+    numbers: numpy array of atomic numbers, one for each bead. These only influence
+        subsequent visualization of .xyz files.
+    ffbtypes: list of names of the bead types (e.g. 'M' or 'L')
+    ffbtype_ids: numpy array of indices that indicate which bead is which ffbtype
+    '''
+    def __init__(self, system, groups, numbers, ffbtypes, ffbtype_ids):
+        AbstractSystem.__init__(self, numbers, None, None, ffbtypes, ffbtype_ids)
+
+        self.groups = groups
+        self.comlist = COMList(system, self.groups)
+        self.pos = self.comlist.pos
+        self._get_bonds(system) # derive bonds between beads from self.system
+        self._init_derived() #build neighs based on self.bonds
+        #self._init_comlist(system)
+        # this attribute is used by ForcePartValence
+        # to set the gpos array to the correct size
+        self.gpos_dim = system.natom
+
+    def _get_bonds(self, system):
+        '''
+        Derives the bonds between the beads based on the bonds of the underlying
+        atomistic system in self.system
+        '''
+        bonds = []
+        for bond in system.bonds:
+            a0 = bond[0]
+            a1 = bond[1]
+            candidate = [self._get_group(a0), self._get_group(a1)]
+            if (tuple(candidate) not in bonds and tuple(candidate[::-1]) not in bonds):
+                if candidate[0] != candidate[1]:
+                    bonds.append(tuple(candidate))
+        self.bonds = bonds
+
+    def _get_group(self, atom):
+        '''
+        Returns the index of the group where atom belongs to
+
+        Arguments
+        ---------
+        atom: index of the atom
+        '''
+        for i, group in enumerate(self.groups):
+            members = group[0]
+            if atom in members:
+                return i
+        return -1
+
