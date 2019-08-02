@@ -41,7 +41,8 @@ __all__ = [
     'Iterative', 'StateItem', 'AttributeStateItem', 'PosStateItem',
     'DipoleStateItem', 'DipoleVelStateItem', 'VolumeStateItem', 'CellStateItem',
     'EPotContribStateItem', 'EpotBondsStateItem', 'EpotBendsStateItem',
-    'EpotDihedsStateItem', 'Hook', 'COMICStateItem',
+    'EpotDihedsStateItem', 'Hook', 'COMICStateItem', 'GposStateItem',
+    'VtensStateItem',
 ]
 
 
@@ -175,8 +176,27 @@ class COMICStateItem(StateItem):
         return np.array([iterative.ff.part_valence_com.iclist.ictab[index]['value'] for index in self.indices])
         #return np.array(iterative.ff.part_valence.iclist.ictab[0]['value'])
 
+class GposStateItem(StateItem):
+    '''
+    Keeps track of gpos.
+    CAN ONLY BE USED IF self IS AN INSTANCE OF ``VERLETINTEGRATOR``
+    '''
+    def __init__(self):
+        StateItem.__init__(self, 'gpos')
 
+    def get_value(self, iterative):
+        return iterative.gpos
 
+class VtensStateItem(StateItem):
+    '''
+    Keeps track of vtens.
+    CAN ONLY BE USED IF self IS AN INSTANCE OF ``VERLETINTEGRATOR``
+    '''
+    def __init__(self):
+        StateItem.__init__(self, 'vtens')
+
+    def get_value(self, iterative):
+        return iterative.vtens
 
 class AttributeStateItem(StateItem):
     def get_value(self, iterative):

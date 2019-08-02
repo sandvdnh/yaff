@@ -67,7 +67,7 @@ __all__ = [
     'ValenceList', 'ValenceTerm', 'Harmonic', 'PolyFour', 'Fues', 'Cross',
     'Cosine', 'Chebychev1', 'Chebychev2', 'Chebychev3', 'Chebychev4',
     'Chebychev6', 'PolySix', 'MM3Quartic', 'MM3Bend', 'BondDoubleWell',
-    'Morse',
+    'Morse', 'Gauss',
 ]
 
 
@@ -200,6 +200,38 @@ class Harmonic(ValenceTerm):
             self.__class__.__name__,
             self.pars[0]/(log.energy.conversion/c**2),
             self.pars[1]/c
+        )
+
+class Gauss(ValenceTerm):
+    '''
+    Gauss potential: K * exp((ic - rv) ** 2 / (2 * sigma ** 2))
+    '''
+    kind = 15
+    def __init__(self, K, rv, sigma, ic):
+        '''
+           **Arguments:**
+
+           K
+                Height of bias potential (in atomic units).
+
+           rv
+                The rest value (in atomic units).
+
+          sigma
+                Standard deviation of gaussian
+
+           ic
+                An ``InternalCoordinate`` object.
+        '''
+        ValenceTerm.__init__(self, [K, rv, sigma], [ic])
+
+    def get_log(self):
+        c = self.ics[0].get_conversion()
+        return '%s(K=%.5e,FC=%.5e,RV=%.5e)' % (
+            self.__class__.__name__,
+            self.pars[0]/(log.energy.conversion),
+            self.pars[1]/(log.energy.conversion/c**2),
+            self.pars[2]/c
         )
 
 

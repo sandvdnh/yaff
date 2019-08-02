@@ -130,12 +130,19 @@ double forward_morse(vlist_row_type* term, iclist_row_type* ictab) {
   return (*term).par0*(exp(-2.0*a)-2.0*exp(-a));
 }
 
-v_forward_type v_forward_fns[15] = {
+double forward_gauss(vlist_row_type* term, iclist_row_type* ictab) {
+  double x, y;
+  x = ictab[(*term).ic0].value - (*term).par1;
+  y = (*term).par2 * (*term).par2;
+  return (*term).par0 * exp(-x*x / (2.0*y));
+}
+
+v_forward_type v_forward_fns[16] = {
   forward_harmonic, forward_polyfour, forward_fues, forward_cross,
   forward_cosine, forward_chebychev1, forward_chebychev2, forward_chebychev3,
   forward_chebychev4, forward_chebychev6, forward_polysix,
   forward_mm3quartic, forward_mm3bend, forward_bonddoublewell,
-  forward_morse,
+  forward_morse, forward_gauss
 };
 
 double vlist_forward(iclist_row_type* ictab, vlist_row_type* vtab, long nv) {
@@ -240,11 +247,18 @@ void back_morse(vlist_row_type* term, iclist_row_type* ictab) {
   ictab[(*term).ic0].grad += -2.0*(*term).par1*(*term).par0*(exp(-2.0*a)-exp(-a));
 }
 
-v_back_type v_back_fns[15] = {
+void back_gauss(vlist_row_type* term, iclist_row_type* ictab) {
+  double a, b;
+  a = ictab[(*term).ic0].value - (*term).par1;
+  b = (*term).par2;
+  ictab[(*term).ic0].grad += (*term).par0 * exp(-a*a/(2*b*b))*(a/(b*b));
+}
+
+v_back_type v_back_fns[16] = {
   back_harmonic, back_polyfour, back_fues, back_cross, back_cosine,
   back_chebychev1, back_chebychev2, back_chebychev3, back_chebychev4,
   back_chebychev6, back_polysix, back_mm3quartic,
-  back_mm3bend, back_bonddoublewell, back_morse
+  back_mm3bend, back_bonddoublewell, back_morse, back_gauss
 };
 
 void vlist_back(iclist_row_type* ictab, vlist_row_type* vtab, long nv) {

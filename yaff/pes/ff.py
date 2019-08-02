@@ -262,29 +262,24 @@ class ForceField(ForcePart):
                     apply_generators(system, yaml_dict, ff_args)
             return ForceField(system, ff_args.parts, ff_args.nlist)
 
-    def add_part_valence_com(self, comsystem, parameters, scaling=None):
+    def add_part_valence_com(self, comsystem, com_ff_tuple):
         '''
-        Creates an instance of ForcePartValence and adds it to self.parts
+        Creates an instance of ForcePartValenceCOM and adds it to self.parts
 
         Arguments
         ---------
-        comlist: comlist based on which the CG force field is defined
+        comsystem: comlist based on which the CG force field is defined
         parameters: path to YAML parameter file that defines the CG force field
+        scaling: (threshold, curvature) tuple that defines the scaling
         '''
         from yaff.pes.generator import apply_generators, FFArgs
         ff_args = FFArgs()
 
-        if isinstance(parameters, str):
-            yaml_dict = yaml.safe_load(open(parameters))
-        else:
-            yaml_dict = parameters
-        if scaling is not None:
-            threshold = scaling[0] * molmod.units.kjmol
-            inverse_temperature = scaling[1] / molmod.units.kjmol
-            scaling = (threshold, inverse_temperature)
+        com_ff_dict = com_ff_tuple[0]
+        scaling = com_ff_tuple[1]
         part_valence_com = ForcePartValenceCOM(comsystem, scaling)
         ff_args.parts.append(part_valence_com)
-        apply_generators(comsystem, yaml_dict, ff_args)
+        apply_generators(comsystem, com_ff_dict, ff_args)
         part_valence_com = ff_args.get_part(ForcePartValenceCOM)
         part_valence_com.name = 'valence_com'
         self.add_part(part_valence_com)
@@ -309,6 +304,7 @@ class ForceField(ForcePart):
             self.nlist.update()
             self.needs_nlist_update = False
         result = sum([part.compute(gpos, vtens) for part in self.parts])
+        #print('total gpos in _internal_compute of FF: ', (gpos[:3] if gpos is not None else 'gpos is None'))
         return result
 
 
@@ -614,6 +610,7 @@ class ForcePartEwaldCorrectionDD(ForcePart):
                 self.alpha, self.scalings.stab, gpos, vtens
             )
 
+
 class ForcePartEwaldNeutralizing(ForcePart):
     '''Neutralizing background correction for 3D periodic systems that are
        charged.
@@ -707,12 +704,7 @@ class ForcePartValence(ForcePart):
 
            system
                 An instance of the ``System`` class.
-           comlist
-                An optional layer to derive centers of mass from the atomic positions.
-                These centers of mass are used as input for the first layer, the relative
-                vectors.
         '''
-        comlist=None
         ForcePart.__init__(self, 'valence', system)
 
         # override self.gpos to the correct size!
@@ -755,6 +747,7 @@ class ForcePartValence(ForcePart):
                 self.dlist.back(gpos, vtens)
             return energy
 
+
 class ForcePartValenceCOM(ForcePartValence):
     '''
     Part of a force-field model with interactions that act on centers of mass
@@ -781,49 +774,53 @@ class ForcePartValenceCOM(ForcePartValence):
             self.iclist.forward()
             energy = self.vlist.forward()
             if not ((gpos is None) and (vtens is None)):
+                #print('AA gpos before bias: ', gpos[:3])
                 self.vlist.back()
                 self.iclist.back()
                 self.comlist.gpos[:] = 0.0
                 self.dlist.back(self.comlist.gpos, vtens)
-                #print('first: ', self.comlist.gpos)
-                energy = self._scale(self.comlist.gpos, energy)
-                #print('second: ', self.comlist.gpos)
+                energy = self._scale(self.comlist.gpos, vtens, energy)
+                #print('COM bias energy: ', energy / molmod.units.kjmol)
                 self.comlist.back(gpos, vtens)
+                #print('ValenceCOM gpos after bias: ', gpos[:3])
             else:
-                energy = self._scale(None, energy)
+                energy = self._scale(None, None, energy)
+            #print('compos 0: ', self.comlist.pos[0, :])
+            #print('vtab: ', self.vlist.vtab)
+            #print('ValenceCOM energy: ', energy)
             return energy
 
-    def _scale(self, gpos, energy):
+    def _scale(self, gpos, vtens, energy):
         '''
         Scales the gpos and energy
         '''
+        #print('energy before: ', energy / molmod.units.kjmol)
         if self.scaling is not None:
-            threshold = self.scaling[0]
-            hardness = self.scaling[1]
-            if False:
-                a = np.exp(hardness * energy)
-                b = np.exp(hardness * threshold)
-                N = (a + b) / 2
-                energy = np.log(N) / hardness
+            thres = self.scaling[0]
+            curve = self.scaling[1]
+            #print('threshold: ', thres / molmod.units.kjmol)
+            delta = energy - thres
+            #print('delta: ', delta / molmod.units.kjmol)
+            #print('energy: ', energy, '  thres: ', thres)
+            if curve * delta < 40:
+                #print(curve * delta)
+                a = np.exp(curve * delta)
+                b = 1
+                N = (a + b)
+                energy = np.log(N) / curve + thres
+                #print('scaled  energy: ', energy)
                 if gpos is not None:
-                    scale = a / (2 * N)
-                    #print('SCALE: ', scale)
-                    #print('ENERGY: ', energy)
+                    scale = a / (N)
+                    #print('scale: ', scale)
                     gpos *= scale
+                if vtens is not None:
+                    scale = a / (N)
+                    vtens *= scale
             else:
-                delta = energy - threshold
-                if hardness * delta < 100:
-                    a = np.exp(hardness * delta)
-                    #b = np.exp(hardness * threshold)
-                    b = 1
-                    N = (a + b) / 2
-                    energy = np.log(N) / hardness + threshold
-                    if gpos is not None:
-                        scale = a / (2 * N)
-                        #print('SCALE: ', scale)
-                        #print('ENERGY: ', energy)
-                        gpos *= scale
+                scale = 1
+        #print('energy after: ', energy / molmod.units.kjmol)
         return energy
+
 
 class ForcePartPressure(ForcePart):
     '''Applies a constant istropic pressure.'''
