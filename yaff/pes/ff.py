@@ -781,7 +781,7 @@ class ForcePartValenceCOM(ForcePartValence):
                 self.dlist.back(self.comlist.gpos, vtens)
                 energy = self._scale(self.comlist.gpos, vtens, energy)
                 #print('COM bias energy: ', energy / molmod.units.kjmol)
-                self.comlist.back(gpos, vtens)
+                self.comlist.back(gpos)
                 #print('ValenceCOM gpos after bias: ', gpos[:3])
             else:
                 energy = self._scale(None, None, energy)

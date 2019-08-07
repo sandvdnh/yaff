@@ -94,10 +94,13 @@ class COMList(object):
         dlist_forward(self.system.pos, self.system.cell, self.deltas, len(self.deltas))
         comlist_forward(self.deltas, self.system.pos, self.pos, self.comsizes, self.comtab)
 
-    def back(self, gpos, vtens):
-        """Derive gpos and virial from the derivatives towards the relative vectors
+    def back(self, gpos):
+        """Derive gpos from the derivatives towards the relative vectors
+           (passes a dummy vtens to dlist_back, because is not calculated using
+           relative vectors between atoms that belong to the same bead.)
 
            The actual computation is carried out by a low-level C routine.
         """
-        comlist_back(self.deltas, gpos, self.gpos, self.comsizes, self.comtab)
-        dlist_back(gpos, vtens, self.deltas, len(self.deltas))
+        if gpos is not None:
+            comlist_back(self.deltas, gpos, self.gpos, self.comsizes, self.comtab)
+            dlist_back(gpos, np.zeros((3, 3)), self.deltas, len(self.deltas))

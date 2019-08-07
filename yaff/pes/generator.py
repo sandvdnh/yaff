@@ -49,7 +49,7 @@ from yaff.pes.nlist import NeighborList
 from yaff.pes.scaling import Scalings
 from yaff.pes.vlist import Harmonic, PolyFour, Fues, Cross, Cosine, \
     Chebychev1, Chebychev2, Chebychev3, Chebychev4, Chebychev6, PolySix, \
-    MM3Quartic, MM3Bend, BondDoubleWell, Morse
+    MM3Quartic, MM3Bend, BondDoubleWell, Morse, Gauss
 from yaff.pes.parameters import Parameters
 from yaff.pes.comlist import COMList
 from yaff.system import System
@@ -64,6 +64,7 @@ __all__ = [
     'TorsionGenerator', 'TorsionCosHarmGenerator', 'TorsionCos2HarmGenerator',
     'UreyBradleyHarmGenerator', 'OopAngleGenerator', 'OopMeanAngleGenerator',
     'OopCosGenerator', 'OopMeanCosGenerator', 'OopDistGenerator', 'BondMorseGenerator',
+    'BondGaussGenerator',
 
     'ValenceCrossGenerator', 'CrossGenerator', 'CrossCosBendGenerator',
     'CrossBondDihedralGenerator', 'CrossBondDihedral2Generator',
@@ -538,6 +539,9 @@ class BondGenerator(ValenceGenerator):
     def iter_indexes(self, system):
         return system.iter_bonds()
 
+class BondGaussGenerator(BondGenerator):
+    prefix = 'BONDGAUSS'
+    VClass = Gauss
 
 class BondHarmGenerator(BondGenerator):
     prefix = 'BONDHARM'
