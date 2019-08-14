@@ -786,8 +786,8 @@ class ForcePartValenceCOM(ForcePartValence):
                 self.comlist.gpos[:] = 0.0
                 self.dlist.back(self.comlist.gpos, vtens)
                 if self.term is not None and vtens is not None:
-                    my_vtens = np.zeros(3)
-                    self.term.compute(np.zeros(3), my_vtens)
+                    my_vtens = np.zeros((3, 3))
+                    self.term.compute(np.zeros((3, 3)), my_vtens)
                     vtens += my_vtens
                 energy = self._scale(self.comlist.gpos, vtens, energy)
                 #print('COM bias energy: ', energy / molmod.units.kjmol)
