@@ -768,19 +768,27 @@ class ForcePartValenceCOM(ForcePartValence):
             with log.section('FPINIT'):
                 log('Force part: %s' % self.name)
                 log.hline()
+        self.term = None # volume term
 
     def _internal_compute(self, gpos, vtens):
         with timer.section('Valence'):
             self.comlist.forward()
             self.dlist.forward()
             self.iclist.forward()
-            energy = self.vlist.forward()
+            energy = 0
+            energy += self.vlist.forward()
+            if self.term is not None:
+                energy += self.term.compute()
             if not ((gpos is None) and (vtens is None)):
                 #print('AA gpos before bias: ', gpos[:3])
                 self.vlist.back()
                 self.iclist.back()
                 self.comlist.gpos[:] = 0.0
                 self.dlist.back(self.comlist.gpos, vtens)
+                if self.term is not None and vtens is not None:
+                    my_vtens = np.zeros(3)
+                    self.term.compute(np.zeros(3), my_vtens)
+                    vtens += my_vtens
                 energy = self._scale(self.comlist.gpos, vtens, energy)
                 #print('COM bias energy: ', energy / molmod.units.kjmol)
                 self.comlist.back(gpos)
