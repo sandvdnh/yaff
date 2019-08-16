@@ -103,7 +103,7 @@ class LegendreBias(BiasPotential):
         [-1, 1] by default)
         '''
         BiasPotential.__init__(self, (order, domain), [cv])
-        self.func = np.polynomial.legendre.Legendre(order, domain=domain)
+        self.func = np.polynomial.legendre.Legendre(order, domain=domain, window=np.array([-1, 1]))
         self.deriv = self.func.deriv(m=1)
 
     def get_log(self):
