@@ -306,7 +306,6 @@ class ForceField(ForcePart):
             self.nlist.update()
             self.needs_nlist_update = False
         result = sum([part.compute(gpos, vtens) for part in self.parts])
-        #print('total gpos in _internal_compute of FF: ', (gpos[:3] if gpos is not None else 'gpos is None'))
         return result
 
 
