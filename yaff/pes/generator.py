@@ -1034,7 +1034,7 @@ class ValenceCrossGenerator(Generator):
     VClass35 = None
     VClass45 = None
 
-    def __call__(self, system, parsec, ff_args):
+    def __call__(self, system, parsec_yaml, parsec, ff_args):
         '''Add contributions to the force field from a ValenceCrossGenerator
 
            **Arguments:**
@@ -1042,19 +1042,28 @@ class ValenceCrossGenerator(Generator):
            system
                 The System object for which a force field is being prepared
 
-           parse
+           parsec_yaml
+                YAML format
+
+           parsec
                 An instance of the ParameterSection class
 
-           ff_ars
+           ff_args
                 An instance of the FFargs class
         '''
-        self.check_suffixes(parsec)
-        conversions = self.process_units(parsec['UNIT'])
-        par_table = self.process_pars(parsec['PARS'], conversions, self.nffatype)
-        if len(par_table) > 0:
-            self.apply(par_table, system, ff_args)
+        if parsec == None:
+            par_table, constraints = self.parse_yaml(parsec_yaml)
+            if len(par_table) > 0:
+                self.apply(par_table, constraints, system, ff_args)
+        else:
+            constraints = None
+            self.check_suffixes(parsec)
+            conversions = self.process_units(parsec['UNIT'])
+            par_table = self.process_pars(parsec['PARS'], conversions, self.nffatype)
+            if len(par_table) > 0:
+                self.apply(par_table, constraints, system, ff_args)
 
-    def apply(self, par_table, system, ff_args):
+    def apply(self, par_table, constraints, system, ff_args):
         '''Generate terms for the system based on the par_table
 
            **Arguments:**
@@ -1100,7 +1109,8 @@ class ValenceCrossGenerator(Generator):
                     rv_i = pars[len(vterms)+ics.index(i)]
                     rv_j = pars[len(vterms)+ics.index(j)]
                     args_ij = (K_ij, rv_i, rv_j, ICClass_i(*get_indexes[i](indexes)), ICClass_j(*get_indexes[j](indexes)))
-                    part_valence.add_term(VClass_ij(*args_ij))
+                    if True:
+                        part_valence.add_term(VClass_ij(*args_ij))
 
     def iter_indexes(self, system):
         '''Iterate over all tuples of indexes for the pair of internal coordinates'''
