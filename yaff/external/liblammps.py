@@ -342,8 +342,12 @@ def swap_noncovalent_lammps(ff, fn_system='system.dat', fn_log="none",
             else: do_table = True
     # Generate tables (if necessary) for force field containing relevant parts
     if not os.path.isfile(fn_table) or overwrite_table:
+        # Make sure that at most one process actually writes the table
+        if comm is None or comm.Get_rank()==0:
         ff_tabulate = ForceField(ff.system, parts_tabulated, nlist=ff.nlist)
         write_lammps_table(ff_tabulate,fn=fn_table, nrows=nrows)
+        # Let all processes wait untill the table is completely written
+        if comm is not None: comm.Barrier()
     # Write system data
     write_lammps_system_data(ff.system, ff=ff, fn=fn_system, triclinic=triclinic)
     # Get the ForcePartLammps, which will handle noncovalent interactions
