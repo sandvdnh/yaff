@@ -97,12 +97,13 @@ class LegendreBias(BiasPotential):
     def __init__(self, order, domain, cv):
         '''
         order: 1D numpy array where the ith element specifies the coefficient
-        of the ith polynomial
+        of the (i+1)th polynomial
 
         domain: domain of the polynomials (which is automatically mapped to
         [-1, 1] by default)
         '''
         BiasPotential.__init__(self, (order, domain), [cv])
+        order = np.concatenate((np.array([0]), order))
         self.func = np.polynomial.legendre.Legendre(order, domain=domain, window=np.array([-1, 1]))
         self.deriv = self.func.deriv(m=1)
 

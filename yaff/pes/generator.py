@@ -52,6 +52,7 @@ from yaff.pes.vlist import Harmonic, PolyFour, Fues, Cross, Cosine, \
     MM3Quartic, MM3Bend, BondDoubleWell, Morse, Gauss
 from yaff.pes.parameters import Parameters
 from yaff.pes.comlist import COMList
+from yaff.pes.constraints import ICConstraint
 from yaff.system import System
 
 
@@ -320,9 +321,10 @@ class Generator(object):
         parsec_yaml: dictionary from the YAML file
         nffatype: number of atoms involved in the Valence term
         '''
-        constraints = None
         ffatypes = []
+        constraints = []
         par_table = dict()
+        pars_list = []
         for entry in parsec_yaml['entries']:
             ffatypes = entry['atoms']
             pars = []
@@ -330,13 +332,31 @@ class Generator(object):
                 unit = parse_unit(parsec_yaml['units'][par])
                 pars.append(entry[par] * unit)
             pars = tuple(pars)
-            par_table[tuple(ffatypes)] = [pars]
+            pars_list.append(pars)
+
+            if entry['constraints'] is not None:
+                for constraint_dict in entry['constraints']:
+                    if constraint_dict['kind'] == 'IC':
+                        unit = parse_unit(constraint_dict['unit'])
+                        eps = constraint_dict['eps'] * unit
+                        rv = constraint_dict['rv'] * unit
+                        prefix = self.VClass.__name__
+                        constraints.append(ICConstraint(prefix, pars, rv=rv, eps=eps))
+                    else:
+                        raise NotImplementedError('I can only handle ICConstraints at the moment!')
+        par_table[tuple(ffatypes)] = pars_list
 
         # add equivalent permutations
+        #par_table_ = dict(par_table)
+        #for key, pars in par_table.iteritems():
+        #    current_par_table = {}
+        #    for alt_key, alt_pars in self.iter_equiv_keys_and_pars(key, pars):
+        #        par_table_[alt_key] = alt_pars
+
         par_table_ = dict(par_table)
-        for key, pars in par_table.iteritems():
+        for key, pars_list in par_table.iteritems():
             current_par_table = {}
-            for alt_key, alt_pars in self.iter_equiv_keys_and_pars(key, pars):
+            for alt_key, alt_pars in self.iter_equiv_keys_and_pars(key, pars_list):
                 par_table_[alt_key] = alt_pars
         return par_table_, constraints
 
@@ -470,7 +490,7 @@ class ValenceGenerator(Generator):
             if len(par_table) > 0:
                 self.apply(par_table, constraints, system, ff_args)
         else:
-            constraints = None
+            constraints = []
             self.check_suffixes(parsec)
             conversions = self.process_units(parsec['UNIT'])
             par_table = self.process_pars(parsec['PARS'], conversions, self.nffatype)
@@ -504,8 +524,15 @@ class ValenceGenerator(Generator):
             par_list = par_table.get(key, [])
             for pars in par_list:
                 vterm = self.get_vterm(pars, indexes)
-                if True: #if constraints are satisfied
+                if len(constraints) == 0: #if constraints are satisfied
                     part_valence.add_term(vterm)
+                else:
+                    add = True
+                    for constraint in constraints:
+                        if not constraint.satisfy(vterm, pars, part_valence, system):
+                            add = False
+                    if add:
+                        part_valence.add_term(vterm)
 
     def get_vterm(self, pars, indexes):
         '''Return an instance of the ValenceTerm class with the proper InternalCoordinate instance

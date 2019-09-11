@@ -174,7 +174,7 @@ class AbstractSystem(object):
         for scope in self.scopes:
             check_name(scope)
         # check the range of the ids
-        print(self.scope_ids.min())
+        #print(self.scope_ids.min())
         if self.scope_ids.min() != 0 or self.scope_ids.max() != len(self.scopes)-1:
             raise ValueError('The ffatype_ids have incorrect bounds.')
         if log.do_medium:
@@ -1243,6 +1243,8 @@ class COMSystem(AbstractSystem):
             a0 = bond[0]
             a1 = bond[1]
             candidate = [self._get_group(a0), self._get_group(a1)]
+            if candidate[0] == -1 or candidate[1] == -1:
+                raise ValueError('Atom {} or {} does not belong to a bead'.format(a0, a1))
             if (tuple(candidate) not in bonds and tuple(candidate[::-1]) not in bonds):
                 if candidate[0] != candidate[1]:
                     bonds.append(tuple(candidate))
