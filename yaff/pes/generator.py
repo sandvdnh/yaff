@@ -327,12 +327,16 @@ class Generator(object):
         pars_list = []
         for entry in parsec_yaml['entries']:
             ffatypes = entry['atoms']
+            key = tuple(ffatypes)
             pars = []
             for par in parsec_yaml['pars']:
                 unit = parse_unit(parsec_yaml['units'][par])
                 pars.append(entry[par] * unit)
             pars = tuple(pars)
-            pars_list.append(pars)
+            if key in par_table:
+                par_table[key].append(pars)
+            else:
+                par_table[key] = [pars]
 
             if entry['constraints'] is not None:
                 for constraint_dict in entry['constraints']:
@@ -344,12 +348,11 @@ class Generator(object):
                         constraints.append(ICConstraint(prefix, pars, rv=rv, eps=eps))
                     else:
                         raise NotImplementedError('I can only handle ICConstraints at the moment!')
-        par_table[tuple(ffatypes)] = pars_list
+        #par_table[tuple(ffatypes)] = pars_list
 
         # add equivalent permutations
         #par_table_ = dict(par_table)
         #for key, pars in par_table.iteritems():
-        #    current_par_table = {}
         #    for alt_key, alt_pars in self.iter_equiv_keys_and_pars(key, pars):
         #        par_table_[alt_key] = alt_pars
 
@@ -357,7 +360,8 @@ class Generator(object):
         for key, pars_list in par_table.iteritems():
             current_par_table = {}
             for alt_key, alt_pars in self.iter_equiv_keys_and_pars(key, pars_list):
-                par_table_[alt_key] = alt_pars
+                assert(alt_pars == pars_list)
+                par_table_[alt_key] = pars_list
         return par_table_, constraints
 
 
@@ -1684,7 +1688,6 @@ class NonbondedGenerator(Generator):
         for entry in parsec_yaml['entries']:
             ffatypes = entry['atoms']
             pars = []
-            #print(entry.keys())
             for par in parsec_yaml['pars']:
                 unit = parse_unit(parsec_yaml['units'][par])
                 pars.append(entry[par] * unit)
