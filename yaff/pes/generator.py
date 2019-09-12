@@ -491,6 +491,8 @@ class ValenceGenerator(Generator):
         '''
         if parsec == None:
             par_table, constraints = self.parse_yaml(parsec_yaml)
+            #print('applying valence generator {} with constraints: '.format(self.VClass.__name__))
+            #print(constraints)
             if len(par_table) > 0:
                 self.apply(par_table, constraints, system, ff_args)
         else:
@@ -528,7 +530,7 @@ class ValenceGenerator(Generator):
             par_list = par_table.get(key, [])
             for pars in par_list:
                 vterm = self.get_vterm(pars, indexes)
-                if len(constraints) == 0: #if constraints are satisfied
+                if len(constraints) == 0:
                     part_valence.add_term(vterm)
                 else:
                     add = True
@@ -537,6 +539,7 @@ class ValenceGenerator(Generator):
                             add = False
                     if add:
                         part_valence.add_term(vterm)
+
 
     def get_vterm(self, pars, indexes):
         '''Return an instance of the ValenceTerm class with the proper InternalCoordinate instance

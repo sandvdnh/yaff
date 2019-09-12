@@ -1226,6 +1226,7 @@ class COMSystem(AbstractSystem):
         self.groups = groups
         self.comlist = COMList(system, self.groups)
         self.pos = self.comlist.pos
+        self.cell = self.comlist.cell
         self._get_bonds(system) # derive bonds between beads from self.system
         self._init_derived() #build neighs based on self.bonds
         #self._init_comlist(system)

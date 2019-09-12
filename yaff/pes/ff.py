@@ -280,6 +280,7 @@ class ForceField(ForcePart):
         com_ff_dict = com_ff_tuple[0]
         scaling = com_ff_tuple[1]
         part_valence_com = ForcePartValenceCOM(comsystem, scaling)
+        comsystem.comlist.forward()
         ff_args.parts.append(part_valence_com)
         apply_generators(comsystem, com_ff_dict, ff_args)
         part_valence_com = ff_args.get_part(ForcePartValenceCOM)

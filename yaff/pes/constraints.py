@@ -25,7 +25,7 @@
 Implements all types of constraints used during the generation of a force field.
 """
 import numpy as np
-from yaff.pes.ff import ForcePartValence
+from yaff.pes.ff import ForcePartValence, ForcePartValenceCOM
 
 __all__ = [
         'Constraint', 'ICConstraint',
@@ -60,9 +60,9 @@ class ICConstraint(Constraint):
         if self.pars == pars:
             part_valence = ForcePartValence(system)
             part_valence.add_term(vterm)
-            part_valence.compute()
+            energy = part_valence.compute()
             ic_index = part_valence.vlist.vtab[0]['ic0']
             ic = part_valence.vlist.iclist.ictab[ic_index]['value']
-            return np.abs(ic - self.rv ) < self.eps
+            return np.abs(ic - self.rv) < self.eps
         else:
             return True
